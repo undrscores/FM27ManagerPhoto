@@ -35,6 +35,12 @@ The id is per save, so it has to be set again for a new save.
 
 Delete `BepInEx\plugins\FM27ManagerPhoto\` and `BepInEx\config\local.fm27.managerphoto.cfg`. Nothing else is modified.
 
+## Tested versions and BepInEx updates
+
+Built and tested with **BepInEx 6.0.0-be.793** (IL2CPP, win-x64), Il2CppInterop 1.5.3, Harmony 2.10.2, Unity 6000.3.18f1.
+
+BepInEx 6 only ships "bleeding-edge" builds, and its API can change between them. If you update BepInEx and this plugin stops loading, the game still starts normally (BepInEx logs the plugin error and skips it). Either go back to build 793, or wait for a release rebuilt against the newer build. If you build it yourself, `dotnet build` compiles against whatever BepInEx is installed in your game folder.
+
 ## After a game update
 
 BepInEx regenerates its interop DLLs by itself when the game changes. This plugin is built to fail safe:
