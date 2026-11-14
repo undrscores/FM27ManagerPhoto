@@ -35,9 +35,19 @@ The id is per save, so it has to be set again for a new save.
 
 Delete `BepInEx\plugins\FM27ManagerPhoto\` and `BepInEx\config\local.fm27.managerphoto.cfg`. Nothing else is modified.
 
+## After a game update
+
+BepInEx regenerates its interop DLLs by itself when the game changes. This plugin is built to fail safe:
+
+- If the patched method or a type it uses is renamed or removed, the plugin logs one warning and does nothing, and the game runs normally with its own portrait.
+- If something changes while the game runs, the plugin logs one warning and stops interfering.
+- It never blocks the game from starting. Worst case, you see your manager's normal face again.
+
+If that happens, check `BepInEx\LogOutput.log` for `FM27ManagerPhoto` lines and open an issue with the game version (it is printed in the `Ready.` line) and the log lines. The fix is usually a one-line change to the method name or signature.
+
 ## Known behaviour
 
-- If a game update renames the patched method, the plugin logs one warning and does nothing.
+- Photos larger than 16 MB or 4096x4096 are refused (with a log warning).
 - The log may show `Il2CppInterop: Class::Init signatures have been exhausted`. That message comes from the interop layer, not this plugin.
 - Only the closeup path used by `SetManagerCloseupImage` is covered. Other places that draw the manager may still show the original.
 

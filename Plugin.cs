@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -20,7 +21,7 @@ namespace FM27ManagerPhoto
     {
         public const string Guid = "local.fm27.managerphoto";
         public const string Name = "FM27ManagerPhoto";
-        public const string Version = "1.0.0";
+        public const string Version = "1.0.1";
 
         internal static ManualLogSource Logger;
         internal static ConfigEntry<bool> Enabled;
@@ -33,41 +34,55 @@ namespace FM27ManagerPhoto
             Logger = Log;
             try
             {
-                string pluginDir = Path.GetDirectoryName(typeof(Plugin).Assembly.Location);
-                Enabled = Config.Bind("General", "Enabled", true, "Master switch.");
-                ManagerUniqueId = Config.Bind("General", "ManagerUniqueId", 0,
-                    "Unique id of YOUR manager. 0 = do nothing. Open your manager profile once, then look for " +
-                    "'closeup requested for manager id ...' in BepInEx/LogOutput.log and copy that number here.");
-                PhotoFolder = Config.Bind("Photo", "Folder", pluginDir, "Folder that contains the PNG. Default: the plugin's own folder.");
-                FileName = Config.Bind("Photo", "FileName", "manager.png", "PNG file name inside the folder.");
-
-                if (!Enabled.Value) { Logger.LogInfo("Disabled in config."); return; }
-
-                var target = typeof(ManagerCloseupShotGenerator).GetMethod(
-                    "SetManagerCloseupImage", BindingFlags.Public | BindingFlags.Static);
-                if (target == null)
-                {
-                    Logger.LogWarning("ManagerCloseupShotGenerator.SetManagerCloseupImage not found (game updated?). Plugin disabled.");
-                    return;
-                }
-
-                var prefix = new HarmonyMethod(typeof(CloseupPatch).GetMethod(nameof(CloseupPatch.Prefix)));
-                new Harmony(Guid).Patch(target, prefix: prefix);
-                Logger.LogInfo($"Ready. ManagerUniqueId={ManagerUniqueId.Value}");
+                Setup(); // separate method: if a game update removed a type, the failure lands in this try block
             }
             catch (Exception e)
             {
-                Logger.LogWarning("Plugin disabled, setup failed: " + e.Message);
+                Logger.LogWarning("Plugin disabled (game update?): " + e.GetType().Name + ": " + e.Message);
             }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void Setup()
+        {
+            string pluginDir = Path.GetDirectoryName(typeof(Plugin).Assembly.Location);
+            Enabled = Config.Bind("General", "Enabled", true, "Master switch.");
+            ManagerUniqueId = Config.Bind("General", "ManagerUniqueId", 0,
+                "Unique id of YOUR manager. 0 = do nothing. Open your manager profile once, then look for " +
+                "'closeup requested for manager id ...' in BepInEx/LogOutput.log and copy that number here.");
+            PhotoFolder = Config.Bind("Photo", "Folder", pluginDir, "Folder that contains the PNG. Default: the plugin's own folder.");
+            FileName = Config.Bind("Photo", "FileName", "manager.png", "PNG file name inside the folder.");
+
+            if (!Enabled.Value) { Logger.LogInfo("Disabled in config."); return; }
+
+            var target = typeof(ManagerCloseupShotGenerator).GetMethod(
+                "SetManagerCloseupImage", BindingFlags.Public | BindingFlags.Static);
+            if (target == null)
+            {
+                Logger.LogWarning("ManagerCloseupShotGenerator.SetManagerCloseupImage not found (game updated?). Plugin disabled.");
+                return;
+            }
+
+            var prefix = new HarmonyMethod(typeof(CloseupPatch).GetMethod(nameof(CloseupPatch.Prefix)));
+            new Harmony(Guid).Patch(target, prefix: prefix);
+
+            string gameVersion = "?";
+            try { gameVersion = Application.version; } catch { }
+            Logger.LogInfo($"Ready. Plugin {Version}, game {gameVersion}, ManagerUniqueId={ManagerUniqueId.Value}");
         }
     }
 
     internal static class CloseupPatch
     {
+        private const long MaxFileBytes = 16 * 1024 * 1024;
+        private const int MaxPixels = 4096;
+        private const int MaxLoadAttempts = 3;   // initial load plus reloads if the game destroys the texture
+        private const int MaxLoggedIds = 100;    // keeps the log and memory bounded on long saves
+
         private static readonly HashSet<int> SeenIds = new HashSet<int>();
-        private static Texture2D _photo;       // static reference keeps the managed wrapper alive
-        private static bool _loadAttempted;
-        private static bool _failed;           // after any error we stop interfering with the game
+        private static Texture2D _photo;         // static reference keeps the managed wrapper alive
+        private static int _loadAttempts;
+        private static bool _failed;             // after any error we stop interfering with the game
 
         // Returns false (skips the original) only when we successfully show our own photo.
         public static bool Prefix(SIImage image, int uniqueId)
@@ -76,7 +91,7 @@ namespace FM27ManagerPhoto
             {
                 if (_failed || image == null) return true;
 
-                if (SeenIds.Add(uniqueId))
+                if (SeenIds.Count < MaxLoggedIds && SeenIds.Add(uniqueId))
                     Plugin.Logger.LogInfo($"closeup requested for manager id {uniqueId}");
 
                 int myId = Plugin.ManagerUniqueId.Value;
@@ -91,21 +106,27 @@ namespace FM27ManagerPhoto
             catch (Exception e)
             {
                 _failed = true;
-                Plugin.Logger.LogWarning("Patch error, plugin stopped interfering: " + e.Message);
+                Plugin.Logger.LogWarning("Patch error, plugin stopped interfering: " + e.GetType().Name + ": " + e.Message);
                 return true;
             }
         }
 
         private static Texture2D GetPhoto()
         {
-            if (_photo != null) return _photo;
-            if (_loadAttempted) return null;
-            _loadAttempted = true;
+            if (_photo != null) return _photo;            // Unity's null check also catches destroyed objects
+            if (_loadAttempts >= MaxLoadAttempts) return null;
+            _loadAttempts++;
 
             string path = Path.Combine(Plugin.PhotoFolder.Value, Plugin.FileName.Value);
-            if (!File.Exists(path))
+            var info = new FileInfo(path);
+            if (!info.Exists)
             {
                 Plugin.Logger.LogWarning("Photo not found: " + path);
+                return null;
+            }
+            if (info.Length > MaxFileBytes)
+            {
+                Plugin.Logger.LogWarning($"Photo is larger than {MaxFileBytes / (1024 * 1024)} MB, not loaded: {path}");
                 return null;
             }
 
@@ -113,6 +134,12 @@ namespace FM27ManagerPhoto
             if (!ImageConversion.LoadImage(tex, File.ReadAllBytes(path)))
             {
                 Plugin.Logger.LogWarning("Could not decode PNG: " + path);
+                UnityEngine.Object.Destroy(tex);
+                return null;
+            }
+            if (tex.width > MaxPixels || tex.height > MaxPixels)
+            {
+                Plugin.Logger.LogWarning($"Photo is {tex.width}x{tex.height}; maximum is {MaxPixels}x{MaxPixels}. Not used.");
                 UnityEngine.Object.Destroy(tex);
                 return null;
             }
