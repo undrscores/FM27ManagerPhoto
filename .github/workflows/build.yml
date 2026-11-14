@@ -1,0 +1,48 @@
+# CI cannot compile this plugin: it references the game's generated interop DLLs
+# (BepInEx\interop), which are copyrighted and must not be published.
+# So CI does two things instead:
+#   1. On a tag: scan the source for forbidden APIs.
+#   2. When a release is published with a locally built DLL attached: re-scan that DLL,
+#      then attach its SHA-256 to the release so anyone can compare it with their own build.
+name: verify
+
+on:
+  push:
+    tags: ['v*']
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  source-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan source
+        shell: pwsh
+        run: ./scripts/check-dll.ps1 -Source
+
+  release-dll:
+    if: github.event_name == 'release'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download release DLL
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "${{ github.event.release.tag_name }}" --pattern FM27ManagerPhoto.dll --repo "${{ github.repository }}"
+      - name: Check DLL
+        shell: pwsh
+        run: ./scripts/check-dll.ps1 -Dll FM27ManagerPhoto.dll
+      - name: Publish SHA-256
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $h = (Get-FileHash FM27ManagerPhoto.dll -Algorithm SHA256).Hash.ToLower()
+          "$h  FM27ManagerPhoto.dll" | Set-Content -Encoding ascii FM27ManagerPhoto.dll.sha256
+          Get-Content FM27ManagerPhoto.dll.sha256
+          gh release upload "${{ github.event.release.tag_name }}" FM27ManagerPhoto.dll.sha256 --clobber --repo "${{ github.repository }}"

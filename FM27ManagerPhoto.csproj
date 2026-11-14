@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>FM27ManagerPhoto</AssemblyName>
+    <RootNamespace>FM27ManagerPhoto</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <!-- The interop wrappers are large; we only reference what we use. -->
+  </PropertyGroup>
+
+  <!--
+    Folder that contains fm.exe. Override on the command line:
+      dotnet build -p:GameDir="D:\SteamLibrary\steamapps\common\Football Manager 27"
+    Game DLLs are referenced from here and are never copied into this repo or the output.
+  -->
+  <PropertyGroup>
+    <GameDir Condition="'$(GameDir)' == ''">C:\XboxGames\Football Manager 27\Content</GameDir>
+    <BepCore>$(GameDir)\BepInEx\core</BepCore>
+    <BepInterop>$(GameDir)\BepInEx\interop</BepInterop>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx.Core"><HintPath>$(BepCore)\BepInEx.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx.Unity.IL2CPP"><HintPath>$(BepCore)\BepInEx.Unity.IL2CPP.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(BepCore)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Runtime"><HintPath>$(BepCore)\Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Common"><HintPath>$(BepCore)\Il2CppInterop.Common.dll</HintPath><Private>false</Private></Reference>
+
+    <Reference Include="Il2Cppmscorlib"><HintPath>$(BepInterop)\Il2Cppmscorlib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(BepInterop)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.ImageConversionModule"><HintPath>$(BepInterop)\UnityEngine.ImageConversionModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="FM.UI"><HintPath>$(BepInterop)\FM.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SI.Bindable"><HintPath>$(BepInterop)\SI.Bindable.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UIElementsModule"><HintPath>$(BepInterop)\UnityEngine.UIElementsModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SI.UI"><HintPath>$(BepInterop)\SI.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SI.Core"><HintPath>$(BepInterop)\SI.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SI.Interop"><HintPath>$(BepInterop)\SI.Interop.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>
