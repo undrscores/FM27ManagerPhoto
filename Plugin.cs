@@ -21,11 +21,12 @@ namespace FM27ManagerPhoto
     {
         public const string Guid = "local.fm27.managerphoto";
         public const string Name = "FM27ManagerPhoto";
-        public const string Version = "1.0.1";
+        public const string Version = "1.0.2";
 
         internal static ManualLogSource Logger;
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<int> ManagerUniqueId;
+        internal static ConfigEntry<string> ManagerName;
         internal static ConfigEntry<string> PhotoFolder;
         internal static ConfigEntry<string> FileName;
 
@@ -50,6 +51,9 @@ namespace FM27ManagerPhoto
             ManagerUniqueId = Config.Bind("General", "ManagerUniqueId", 0,
                 "Unique id of YOUR manager. 0 = do nothing. Open your manager profile once, then look for " +
                 "'closeup requested for manager id ...' in BepInEx/LogOutput.log and copy that number here.");
+            ManagerName = Config.Bind("General", "ManagerName", "",
+                "Experimental, optional. Only needed if the game asks for your closeup by name on some screen " +
+                "(log line: 'closeup requested for manager name ...'). Leave empty otherwise.");
             PhotoFolder = Config.Bind("Photo", "Folder", pluginDir, "Folder that contains the PNG. Default: the plugin's own folder.");
             FileName = Config.Bind("Photo", "FileName", "manager.png", "PNG file name inside the folder.");
 
@@ -63,12 +67,23 @@ namespace FM27ManagerPhoto
                 return;
             }
 
-            var prefix = new HarmonyMethod(typeof(CloseupPatch).GetMethod(nameof(CloseupPatch.Prefix)));
-            new Harmony(Guid).Patch(target, prefix: prefix);
+            var harmony = new Harmony(Guid);
+            harmony.Patch(target, prefix: new HarmonyMethod(typeof(CloseupPatch).GetMethod(nameof(CloseupPatch.Prefix))));
+
+            // The by-name variant is optional: if it is missing we only lose that extra path.
+            var byName = typeof(ManagerCloseupShotGenerator).GetMethod(
+                "SetManagerCloseupImageByName", BindingFlags.Public | BindingFlags.Static);
+            if (byName != null)
+                harmony.Patch(byName, prefix: new HarmonyMethod(typeof(CloseupPatch).GetMethod(nameof(CloseupPatch.PrefixByName))));
+            else
+                Logger.LogWarning("SetManagerCloseupImageByName not found; the ManagerName option is unavailable.");
 
             string gameVersion = "?";
             try { gameVersion = Application.version; } catch { }
             Logger.LogInfo($"Ready. Plugin {Version}, game {gameVersion}, ManagerUniqueId={ManagerUniqueId.Value}");
+            if (ManagerUniqueId.Value == 0 && string.IsNullOrWhiteSpace(ManagerName.Value))
+                Logger.LogInfo("ManagerUniqueId is not set. Open your manager profile, find the line " +
+                               "'closeup requested for manager id N' below, and put N into the config file.");
         }
     }
 
@@ -80,6 +95,7 @@ namespace FM27ManagerPhoto
         private const int MaxLoggedIds = 100;    // keeps the log and memory bounded on long saves
 
         private static readonly HashSet<int> SeenIds = new HashSet<int>();
+        private static readonly HashSet<string> SeenNames = new HashSet<string>();
         private static Texture2D _photo;         // static reference keeps the managed wrapper alive
         private static int _loadAttempts;
         private static bool _failed;             // after any error we stop interfering with the game
@@ -97,18 +113,43 @@ namespace FM27ManagerPhoto
                 int myId = Plugin.ManagerUniqueId.Value;
                 if (myId == 0 || uniqueId != myId) return true;
 
-                var tex = GetPhoto();
-                if (tex == null) return true;
+                return !ShowPhoto(image);
+            }
+            catch (Exception e) { return Fail(e); }
+        }
 
-                image.SetImage(tex);
-                return false;
-            }
-            catch (Exception e)
+        // Same idea for the by-name variant; only active when ManagerName is set in the config.
+        public static bool PrefixByName(SIImage image, string name)
+        {
+            try
             {
-                _failed = true;
-                Plugin.Logger.LogWarning("Patch error, plugin stopped interfering: " + e.GetType().Name + ": " + e.Message);
-                return true;
+                if (_failed || image == null) return true;
+
+                if (SeenNames.Count < MaxLoggedIds && SeenNames.Add(name ?? ""))
+                    Plugin.Logger.LogInfo($"closeup requested for manager name '{name}'");
+
+                string mine = Plugin.ManagerName.Value;
+                if (string.IsNullOrWhiteSpace(mine) || !string.Equals(name, mine.Trim(), StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                return !ShowPhoto(image);
             }
+            catch (Exception e) { return Fail(e); }
+        }
+
+        private static bool ShowPhoto(SIImage image)
+        {
+            var tex = GetPhoto();
+            if (tex == null) return false;
+            image.SetImage(tex);
+            return true;
+        }
+
+        private static bool Fail(Exception e)
+        {
+            _failed = true;
+            Plugin.Logger.LogWarning("Patch error, plugin stopped interfering: " + e.GetType().Name + ": " + e.Message);
+            return true; // run the game's original method
         }
 
         private static Texture2D GetPhoto()

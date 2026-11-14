@@ -1,6 +1,6 @@
 # FM27ManagerPhoto
 
-A small BepInEx 6 (IL2CPP) plugin for **Football Manager 27** that shows your own PNG as your manager's portrait wherever the game draws the manager closeup. Nothing else: no player faces, no UI changes. About 130 lines, fully readable; see [SECURITY.md](SECURITY.md).
+A small BepInEx 6 (IL2CPP) plugin for **Football Manager 27** that shows your own PNG as your manager's portrait wherever the game draws the manager closeup. Nothing else: no player faces, no UI changes. Under 200 lines, fully readable; see [SECURITY.md](SECURITY.md).
 
 ## Requirements
 
@@ -20,7 +20,7 @@ The game folder is the one that contains `fm.exe`:
 5. Edit `<game folder>\BepInEx\config\local.fm27.managerphoto.cfg` and set `ManagerUniqueId = NNNN`.
 6. Start the game again.
 
-The id is per save, so it has to be set again for a new save.
+The id stayed the same across game restarts in testing. It has not been tested across different saves or new careers: if the portrait disappears after starting a new save, repeat steps 3 to 5 and check whether the id changed.
 
 ## Config
 
@@ -28,6 +28,7 @@ The id is per save, so it has to be set again for a new save.
 |---|---|---|
 | `Enabled` | `true` | Master switch |
 | `ManagerUniqueId` | `0` | Your manager's id. `0` = do nothing |
+| `ManagerName` | empty | Experimental. Only for screens where the game asks for the closeup by name (log line `closeup requested for manager name '...'`). Untested: it never fired in my testing. |
 | `Photo.Folder` | the plugin's folder | Where the PNG is |
 | `Photo.FileName` | `manager.png` | PNG file name |
 
@@ -55,7 +56,8 @@ If that happens, check `BepInEx\LogOutput.log` for `FM27ManagerPhoto` lines and 
 
 - Photos larger than 16 MB or 4096x4096 are refused (with a log warning).
 - The log may show `Il2CppInterop: Class::Init signatures have been exhausted`. That message comes from the interop layer, not this plugin.
-- Only the closeup path used by `SetManagerCloseupImage` is covered. Other places that draw the manager may still show the original.
+- The closeup path used by `SetManagerCloseupImage` is tested (profile, interviews). The by-name path (`ManagerName`) is untested. Other places that draw the manager may still show the original; please open an issue with the screen name and the log.
+- Steam installs, other game versions and other BepInEx builds are untested.
 
 ## Building
 
